@@ -1,0 +1,1 @@
+import{a as e,r as t}from"./motion-BJATcoEN.js";var n=e();function r({children:e}){return(0,n.jsx)(t.div,{initial:{opacity:0},animate:{opacity:1},exit:{opacity:0},transition:{duration:.3},children:e})}export{r as t};
