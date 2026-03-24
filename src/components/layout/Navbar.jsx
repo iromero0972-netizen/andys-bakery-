@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import { AnimatePresence, motion } from 'framer-motion'
 import { Menu, X } from 'lucide-react'
-import { NAV_LINKS } from '../../lib/constants'
+import { NAV_LINKS, ORDER_APP_URL } from '../../lib/constants'
 
 export default function Navbar() {
   const [scrolled, setScrolled] = useState(false)
@@ -43,7 +43,7 @@ export default function Navbar() {
       >
         <nav
           aria-label="Main navigation"
-          className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex items-center justify-between h-16"
+          className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex items-center justify-between h-20"
         >
           {/* Logo */}
           <Link
@@ -54,33 +54,36 @@ export default function Navbar() {
             <img
               src="/images/logo.png"
               alt="Andy's Bakery"
-              style={{ height: '48px', width: 'auto' }}
+              style={{ height: '64px', width: 'auto' }}
               className="object-contain"
             />
           </Link>
 
           {/* Desktop nav links */}
           <ul className="hidden lg:flex items-center gap-1" role="list">
-            {NAV_LINKS.map(({ label, path }) => {
-              const isActive = pathname === path
+            {NAV_LINKS.map(({ label, path, external }) => {
+              const isActive = !external && pathname === path
+              const linkClass = `
+                font-body font-medium text-sm tracking-wide uppercase px-4 py-2 rounded
+                transition-colors duration-200 min-h-[44px] inline-flex items-center
+                ${isActive
+                  ? 'text-terracotta underline underline-offset-4'
+                  : showSolid
+                    ? 'text-charcoal hover:text-terracotta'
+                    : 'text-cream hover:text-terracotta'
+                }
+              `
               return (
                 <li key={path}>
-                  <Link
-                    to={path}
-                    className={`
-                      font-body font-medium text-sm tracking-wide uppercase px-4 py-2 rounded
-                      transition-colors duration-200 min-h-[44px] inline-flex items-center
-                      ${isActive
-                        ? 'text-terracotta underline underline-offset-4'
-                        : showSolid
-                          ? 'text-charcoal hover:text-terracotta'
-                          : 'text-cream hover:text-terracotta'
-                      }
-                    `}
-                    aria-current={isActive ? 'page' : undefined}
-                  >
-                    {label}
-                  </Link>
+                  {external ? (
+                    <a href={path} target="_blank" rel="noopener noreferrer" className={linkClass}>
+                      {label}
+                    </a>
+                  ) : (
+                    <Link to={path} className={linkClass} aria-current={isActive ? 'page' : undefined}>
+                      {label}
+                    </Link>
+                  )}
                 </li>
               )
             })}
@@ -88,8 +91,10 @@ export default function Navbar() {
 
           {/* Desktop CTA */}
           <div className="hidden lg:flex items-center">
-            <Link
-              to="/order"
+            <a
+              href={ORDER_APP_URL}
+              target="_blank"
+              rel="noopener noreferrer"
               className="
                 bg-terracotta hover:bg-terracotta-dark text-white
                 font-body font-medium text-sm tracking-wide uppercase
@@ -98,7 +103,7 @@ export default function Navbar() {
               "
             >
               Order Now
-            </Link>
+            </a>
           </div>
 
           {/* Mobile hamburger */}
@@ -173,24 +178,27 @@ export default function Navbar() {
               {/* Drawer nav links */}
               <nav aria-label="Mobile navigation" className="flex-1 overflow-y-auto px-6 py-6">
                 <ul className="flex flex-col gap-1" role="list">
-                  {NAV_LINKS.map(({ label, path }) => {
-                    const isActive = pathname === path
+                  {NAV_LINKS.map(({ label, path, external }) => {
+                    const isActive = !external && pathname === path
+                    const linkClass = `
+                      font-body font-medium text-sm tracking-wide uppercase
+                      flex items-center min-h-[44px] px-3 rounded transition-colors duration-200
+                      ${isActive
+                        ? 'text-terracotta bg-terracotta/10'
+                        : 'text-charcoal hover:text-terracotta hover:bg-terracotta/5'
+                      }
+                    `
                     return (
                       <li key={path}>
-                        <Link
-                          to={path}
-                          className={`
-                            font-body font-medium text-sm tracking-wide uppercase
-                            flex items-center min-h-[44px] px-3 rounded transition-colors duration-200
-                            ${isActive
-                              ? 'text-terracotta bg-terracotta/10'
-                              : 'text-charcoal hover:text-terracotta hover:bg-terracotta/5'
-                            }
-                          `}
-                          aria-current={isActive ? 'page' : undefined}
-                        >
-                          {label}
-                        </Link>
+                        {external ? (
+                          <a href={path} target="_blank" rel="noopener noreferrer" className={linkClass}>
+                            {label}
+                          </a>
+                        ) : (
+                          <Link to={path} className={linkClass} aria-current={isActive ? 'page' : undefined}>
+                            {label}
+                          </Link>
+                        )}
                       </li>
                     )
                   })}
@@ -199,8 +207,10 @@ export default function Navbar() {
 
               {/* Drawer CTA */}
               <div className="px-6 pb-8 pt-2">
-                <Link
-                  to="/order"
+                <a
+                  href={ORDER_APP_URL}
+                  target="_blank"
+                  rel="noopener noreferrer"
                   className="
                     bg-terracotta hover:bg-terracotta-dark text-white
                     font-body font-medium text-sm tracking-wide uppercase
@@ -209,7 +219,7 @@ export default function Navbar() {
                   "
                 >
                   Order Now
-                </Link>
+                </a>
               </div>
             </motion.div>
           </>

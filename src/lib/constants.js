@@ -3,6 +3,8 @@ export const WEBHOOK_URL = import.meta.env.VITE_WEBHOOK_URL || ''
 export const WHATSAPP_MESSAGE = 'Hola! Me interesa ordenar cake jars de Andy\'s Bakery. Quisiera información sobre...'
 export const WHATSAPP_URL = `https://wa.me/${WHATSAPP_NUMBER}?text=${encodeURIComponent(WHATSAPP_MESSAGE)}`
 
+export const ORDER_APP_URL = import.meta.env.VITE_ORDER_APP_URL || 'http://localhost:4173'
+
 export const BUSINESS_EMAIL = 'andyclawbot@gmail.com'
 export const BUSINESS_INSTAGRAM = 'andysbakeryusa'
 export const BUSINESS_LOCATION = 'Katy, Texas'
@@ -11,7 +13,7 @@ export const NAV_LINKS = [
   { label: 'Home', path: '/' },
   { label: 'Menu', path: '/menu' },
   { label: 'About', path: '/about' },
-  { label: 'Order', path: '/order' },
+  { label: 'Order', path: ORDER_APP_URL, external: true },
   { label: 'Contact', path: '/contact' },
 ]
 
