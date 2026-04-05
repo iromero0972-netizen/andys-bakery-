@@ -1,0 +1,322 @@
+{
+  "name": "KAT-DEL-QAGoLive-v1",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "katia-qa-golive",
+        "authentication": "headerAuth",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "wf06-node-01",
+      "name": "Solicitar QA/Go-Live",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1.1,
+      "position": [240, 300],
+      "webhookId": "katia-qa-golive"
+    },
+    {
+      "parameters": {
+        "operation": "read",
+        "documentId": { "__rl": true, "mode": "list", "value": "KATIA_DELIVERY_SPREADSHEET_ID" },
+        "sheetName": { "__rl": true, "mode": "list", "value": "Projects" },
+        "filtersUI": {
+          "values": [{ "lookupColumn": "project_id", "lookupValue": "={{ $json.project_id }}" }]
+        },
+        "options": {}
+      },
+      "id": "wf06-node-02",
+      "name": "Leer Proyecto",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.2,
+      "position": [460, 300],
+      "credentials": {
+        "googleSheetsOAuth2Api": { "id": "GOOGLE_SHEETS_CREDENTIAL_ID", "name": "Google Sheets OAuth2" }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const qa = $json.qa_results || $('Solicitar QA/Go-Live').item.json.qa_results;\nconst passRate = (qa.test_cases_passed / qa.test_cases_total) * 100;\nconst isReady = passRate >= 95\n  && qa.test_cases_failed === 0\n  && qa.rollback_tested === true\n  && qa.edge_cases_tested >= 3;\n\nconst blockers = [\n  passRate < 95 ? `Pass rate ${passRate.toFixed(1)}% (requiere 95%)` : null,\n  qa.test_cases_failed > 0 ? `${qa.test_cases_failed} tests fallidos` : null,\n  !qa.rollback_tested ? 'Rollback NO probado (RO-05)' : null,\n  qa.edge_cases_tested < 3 ? `Solo ${qa.edge_cases_tested} edge cases (mín 3)` : null\n].filter(Boolean);\n\nreturn [{\n  json: {\n    ...$json,\n    pass_rate: passRate,\n    is_ready: isReady,\n    blockers: blockers,\n    test_cases_passed: qa.test_cases_passed,\n    test_cases_total: qa.test_cases_total,\n    edge_cases_tested: qa.edge_cases_tested,\n    rollback_tested: qa.rollback_tested\n  }\n}];"
+      },
+      "id": "wf06-node-03",
+      "name": "Evaluar QA Readiness",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [680, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "conditions": [
+            {
+              "id": "cond-ready",
+              "leftValue": "={{ $json.is_ready }}",
+              "rightValue": true,
+              "operator": { "type": "boolean", "operation": "true" }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "wf06-node-04",
+      "name": "¿QA Aprobado?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [900, 300]
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $env.TELEGRAM_CEO_CHAT_ID }}",
+        "text": "❌ *QA NO APROBADO*\n*Proyecto:* {{ $json.name }}\n*Pass rate:* {{ $json.pass_rate.toFixed(1) }}%\n*Blockers:*\n{{ $json.blockers.join('\\n') }}\n━━━━━━━━━━━━━━━━━━━\n🔧 Corregir y re-enviar QA",
+        "additionalFields": { "parse_mode": "Markdown" }
+      },
+      "id": "wf06-node-04b",
+      "name": "QA Rechazado",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.1,
+      "position": [1120, 460],
+      "credentials": {
+        "telegramApi": { "id": "TELEGRAM_CREDENTIAL_ID", "name": "Telegram Bot" }
+      }
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $env.TELEGRAM_CEO_CHAT_ID }}",
+        "text": "🚀 *GO-LIVE READY — REQUIERE APROBACIÓN*\n━━━━━━━━━━━━━━━━━━━\n*Proyecto:* {{ $json.name }}\n*Cliente:* {{ $json.client_id }}\n*QA Pass Rate:* {{ $json.pass_rate.toFixed(1) }}%\n*Tests:* {{ $json.test_cases_passed }}/{{ $json.test_cases_total }}\n*Edge Cases:* {{ $json.edge_cases_tested }}\n*Rollback:* ✅ Probado\n━━━━━━━━━━━━━━━━━━━\n*Triple sign-off requerido (RO-09):*\n☐ Technical Owner (Claude)\n☐ Business Owner (Cliente)\n☐ CEO (Ignacio)\n━━━━━━━━━━━━━━━━━━━\nResponde ✅ para aprobar go-live",
+        "additionalFields": { "parse_mode": "Markdown" }
+      },
+      "id": "wf06-node-05",
+      "name": "Solicitar Go-Live",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.1,
+      "position": [1120, 200],
+      "credentials": {
+        "telegramApi": { "id": "TELEGRAM_CREDENTIAL_ID", "name": "Telegram Bot" }
+      }
+    },
+    {
+      "parameters": {
+        "resume": "webhook",
+        "options": {
+          "webhookSuffix": "katia-golive-approval",
+          "timeout": 259200,
+          "timeoutUnit": "seconds"
+        }
+      },
+      "id": "wf06-node-06",
+      "name": "Esperar Aprobación",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [1340, 200]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "conditions": [
+            {
+              "id": "cond-golive-approved",
+              "leftValue": "={{ $json.decision }}",
+              "rightValue": "approved",
+              "operator": { "type": "string", "operation": "equals" }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "wf06-node-07",
+      "name": "¿Go-Live Aprobado?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1560, 200]
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "documentId": { "__rl": true, "mode": "list", "value": "KATIA_DELIVERY_SPREADSHEET_ID" },
+        "sheetName": { "__rl": true, "mode": "list", "value": "Projects" },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "phase": "prod",
+            "status": "prod"
+          },
+          "matchingColumns": ["project_id"]
+        },
+        "options": {}
+      },
+      "id": "wf06-node-08-sheets",
+      "name": "Actualizar a Producción",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.2,
+      "position": [1780, 120],
+      "credentials": {
+        "googleSheetsOAuth2Api": { "id": "GOOGLE_SHEETS_CREDENTIAL_ID", "name": "Google Sheets OAuth2" }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "appendOrUpdate",
+        "documentId": { "__rl": true, "mode": "list", "value": "KATIA_DELIVERY_SPREADSHEET_ID" },
+        "sheetName": { "__rl": true, "mode": "list", "value": "Project_Activities" },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "activity_id": "={{ \"ACT-\" + Date.now() }}",
+            "project_id": "={{ $json.project_id }}",
+            "type": "go_live",
+            "details": "={{ 'Go-live aprobado. Pass rate: ' + $json.pass_rate + '%. Tests: ' + $json.test_cases_passed + '/' + $json.test_cases_total }}",
+            "timestamp": "={{ new Date().toISOString() }}",
+            "workflow": "KAT-DEL-QAGoLive-v1"
+          }
+        },
+        "options": {}
+      },
+      "id": "wf06-node-08-log",
+      "name": "Log Go-Live",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.2,
+      "position": [1780, 260],
+      "credentials": {
+        "googleSheetsOAuth2Api": { "id": "GOOGLE_SHEETS_CREDENTIAL_ID", "name": "Google Sheets OAuth2" }
+      }
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $env.TELEGRAM_CEO_CHAT_ID }}",
+        "text": "🎉 *GO-LIVE EXITOSO*\n━━━━━━━━━━━━━━━━━━━\n*Proyecto:* {{ $json.name }}\n*Cliente:* {{ $json.client_id }}\n━━━━━━━━━━━━━━━━━━━\n✅ Desplegado en producción\n🛡️ Hypercare activo por 7 días\n📊 Monitoreo iniciado (WF-Q1)",
+        "additionalFields": { "parse_mode": "Markdown" }
+      },
+      "id": "wf06-node-09",
+      "name": "Go-Live Confirmado",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.1,
+      "position": [2000, 120],
+      "credentials": {
+        "telegramApi": { "id": "TELEGRAM_CREDENTIAL_ID", "name": "Telegram Bot" }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "documentId": { "__rl": true, "mode": "list", "value": "KATIA_DELIVERY_SPREADSHEET_ID" },
+        "sheetName": { "__rl": true, "mode": "list", "value": "Projects" },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "phase": "hypercare",
+            "status": "hypercare",
+            "notes": "={{ 'Hypercare until ' + new Date(Date.now() + 7 * 86400000).toISOString().split('T')[0] }}"
+          },
+          "matchingColumns": ["project_id"]
+        },
+        "options": {}
+      },
+      "id": "wf06-node-10",
+      "name": "Iniciar Hypercare",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.2,
+      "position": [2220, 120],
+      "credentials": {
+        "googleSheetsOAuth2Api": { "id": "GOOGLE_SHEETS_CREDENTIAL_ID", "name": "Google Sheets OAuth2" }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "appendOrUpdate",
+        "documentId": { "__rl": true, "mode": "list", "value": "KATIA_DELIVERY_SPREADSHEET_ID" },
+        "sheetName": { "__rl": true, "mode": "list", "value": "Project_Activities" },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "activity_id": "={{ \"ACT-\" + Date.now() }}",
+            "project_id": "={{ $json.project_id }}",
+            "type": "golive_rejected",
+            "details": "Go-live rechazado, manteniendo en staging",
+            "timestamp": "={{ new Date().toISOString() }}",
+            "workflow": "KAT-DEL-QAGoLive-v1"
+          }
+        },
+        "options": {}
+      },
+      "id": "wf06-node-07b",
+      "name": "Log Rechazo Go-Live",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.2,
+      "position": [1780, 400],
+      "credentials": {
+        "googleSheetsOAuth2Api": { "id": "GOOGLE_SHEETS_CREDENTIAL_ID", "name": "Google Sheets OAuth2" }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ success: true, message: 'QA evaluado', is_ready: $json.is_ready }) }}",
+        "options": { "responseCode": 200 }
+      },
+      "id": "wf06-node-response",
+      "name": "Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1340, 460]
+    }
+  ],
+  "connections": {
+    "Solicitar QA/Go-Live": {
+      "main": [[ { "node": "Leer Proyecto", "type": "main", "index": 0 } ]]
+    },
+    "Leer Proyecto": {
+      "main": [[ { "node": "Evaluar QA Readiness", "type": "main", "index": 0 } ]]
+    },
+    "Evaluar QA Readiness": {
+      "main": [[ { "node": "¿QA Aprobado?", "type": "main", "index": 0 } ]]
+    },
+    "¿QA Aprobado?": {
+      "main": [
+        [{ "node": "Solicitar Go-Live", "type": "main", "index": 0 }],
+        [{ "node": "QA Rechazado", "type": "main", "index": 0 }]
+      ]
+    },
+    "QA Rechazado": {
+      "main": [[ { "node": "Response", "type": "main", "index": 0 } ]]
+    },
+    "Solicitar Go-Live": {
+      "main": [[ { "node": "Esperar Aprobación", "type": "main", "index": 0 } ]]
+    },
+    "Esperar Aprobación": {
+      "main": [[ { "node": "¿Go-Live Aprobado?", "type": "main", "index": 0 } ]]
+    },
+    "¿Go-Live Aprobado?": {
+      "main": [
+        [
+          { "node": "Actualizar a Producción", "type": "main", "index": 0 },
+          { "node": "Log Go-Live", "type": "main", "index": 0 }
+        ],
+        [{ "node": "Log Rechazo Go-Live", "type": "main", "index": 0 }]
+      ]
+    },
+    "Actualizar a Producción": {
+      "main": [[ { "node": "Go-Live Confirmado", "type": "main", "index": 0 } ]]
+    },
+    "Go-Live Confirmado": {
+      "main": [[ { "node": "Iniciar Hypercare", "type": "main", "index": 0 } ]]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner"
+  },
+  "staticData": null,
+  "tags": [
+    { "name": "Delivery" },
+    { "name": "WF-06" },
+    { "name": "QA" },
+    { "name": "Go-Live" }
+  ],
+  "triggerCount": 1,
+  "updatedAt": "2026-04-05T00:00:00.000Z",
+  "versionId": "1"
+}

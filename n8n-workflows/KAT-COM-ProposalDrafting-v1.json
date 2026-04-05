@@ -1,0 +1,312 @@
+{
+  "name": "KAT-COM-ProposalDrafting-v1",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "katia-generate-proposal",
+        "authentication": "headerAuth",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "wf03-node-01",
+      "name": "Solicitud de Propuesta",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1.1,
+      "position": [240, 300],
+      "webhookId": "katia-generate-proposal"
+    },
+    {
+      "parameters": {
+        "operation": "read",
+        "documentId": { "__rl": true, "mode": "list", "value": "KATIA_CRM_SPREADSHEET_ID" },
+        "sheetName": { "__rl": true, "mode": "list", "value": "Leads" },
+        "filtersUI": {
+          "values": [{ "lookupColumn": "lead_id", "lookupValue": "={{ $json.lead_id }}" }]
+        },
+        "options": {}
+      },
+      "id": "wf03-node-02",
+      "name": "Leer Datos del Lead",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.2,
+      "position": [460, 300],
+      "credentials": {
+        "googleSheetsOAuth2Api": { "id": "GOOGLE_SHEETS_CREDENTIAL_ID", "name": "Google Sheets OAuth2" }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "manual",
+        "duplicateItem": false,
+        "assignments": {
+          "assignments": [
+            {
+              "id": "f-pricing",
+              "name": "pricing",
+              "value": "={{ JSON.stringify({ starter: { name: 'Starter', setup: '$500-$1,500', retainer: '$200-$500/mes', workflows: '1-2', support: 'Email', sla: '48hrs' }, growth: { name: 'Growth', setup: '$1,500-$3,000', retainer: '$500-$1,000/mes', workflows: '3-5', support: 'Prioritario', sla: '24hrs' }, enterprise: { name: 'Enterprise', setup: '$3,000-$10,000', retainer: '$1,000-$2,500/mes', workflows: 'Custom', support: 'Dedicado', sla: '4hrs' } }[$json.estimated_complexity]) }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": { "includeBinary": false }
+      },
+      "id": "wf03-node-03",
+      "name": "Pricing Table",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.3,
+      "position": [680, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "x-api-key", "value": "={{ $env.ANTHROPIC_API_KEY }}" },
+            { "name": "anthropic-version", "value": "2023-06-01" },
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ model: \"claude-sonnet-4-20250514\", max_tokens: 2000, system: \"Eres el director comercial de KATIA.AI. Generas propuestas comerciales profesionales en español. La propuesta debe incluir: 1) Diagnóstico del problema, 2) Solución propuesta con workflows específicos, 3) Beneficios esperados (sin inventar números de ROI), 4) Timeline, 5) Inversión, 6) Términos (50/50 setup, retainer mensual, Net 10). Tono: profesional, cálido, confiable. Diferenciador: 'CPA con 30+ años construyendo automatizaciones — no somos developers jugando con IA, somos profesionales de negocios que dominan la tecnología.'\", messages: [{ role: \"user\", content: \"Genera propuesta para:\\n\\nCliente: \" + $json.name + \" — \" + $json.company + \"\\nProblemas: \" + $json.pain_points + \"\\nProcesos a automatizar: \" + $json.processes_to_automate + \"\\nSistemas actuales: \" + $json.current_systems + \"\\nNotas discovery: \" + $json.discovery_notes + \"\\nComplejidad estimada: \" + $json.estimated_complexity + \"\\nTimeline: \" + $json.timeline_preference + \"\\nPresupuesto discutido: \" + $json.budget_discussed + \"\\nPricing del tier: \" + $json.pricing + \"\\n\\nResponde con JSON: {\\\"title\\\": \\\"...\\\", \\\"body_html\\\": \\\"...\\\", \\\"summary\\\": \\\"1-2 líneas\\\"}\" }] }) }}",
+        "options": {}
+      },
+      "id": "wf03-node-04",
+      "name": "Claude API: Generar Propuesta",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [900, 300]
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $env.TELEGRAM_CEO_CHAT_ID }}",
+        "text": "📝 *PROPUESTA LISTA PARA REVISIÓN*\n━━━━━━━━━━━━━━━━━━━\n*Cliente:* {{ $json.name }} — {{ $json.company }}\n*Tier:* {{ $json.estimated_complexity }}\n*Resumen:* {{ JSON.parse($json.data.content[0].text).summary }}\n━━━━━━━━━━━━━━━━━━━\n⚠️ *REQUIERE TU APROBACIÓN (R1)*\nResponde: ✅ para aprobar, ❌ para rechazar, 📝 para editar",
+        "additionalFields": { "parse_mode": "Markdown" }
+      },
+      "id": "wf03-node-05",
+      "name": "Propuesta Lista para Review",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.1,
+      "position": [1120, 300],
+      "credentials": {
+        "telegramApi": { "id": "TELEGRAM_CREDENTIAL_ID", "name": "Telegram Bot" }
+      }
+    },
+    {
+      "parameters": {
+        "resume": "webhook",
+        "options": {
+          "webhookSuffix": "katia-proposal-approval",
+          "timeout": 172800,
+          "timeoutUnit": "seconds"
+        }
+      },
+      "id": "wf03-node-06",
+      "name": "Esperar Aprobación CEO",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [1340, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "conditions": [
+            {
+              "id": "cond-approved",
+              "leftValue": "={{ $json.decision }}",
+              "rightValue": "approved",
+              "operator": { "type": "string", "operation": "equals" }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "wf03-node-07",
+      "name": "¿Aprobado?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1560, 300]
+    },
+    {
+      "parameters": {
+        "operation": "appendOrUpdate",
+        "documentId": { "__rl": true, "mode": "list", "value": "KATIA_CRM_SPREADSHEET_ID" },
+        "sheetName": { "__rl": true, "mode": "list", "value": "Activities" },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "activity_id": "={{ \"ACT-\" + Date.now() }}",
+            "lead_id": "={{ $json.lead_id }}",
+            "type": "proposal_rejected",
+            "source": "workflow",
+            "details": "Propuesta rechazada por CEO",
+            "timestamp": "={{ new Date().toISOString() }}",
+            "workflow": "KAT-COM-ProposalDrafting-v1"
+          }
+        },
+        "options": {}
+      },
+      "id": "wf03-node-07b",
+      "name": "Log Rechazo",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.2,
+      "position": [1780, 460],
+      "credentials": {
+        "googleSheetsOAuth2Api": { "id": "GOOGLE_SHEETS_CREDENTIAL_ID", "name": "Google Sheets OAuth2" }
+      }
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $json.email }}",
+        "subject": "={{ JSON.parse($json.proposal_content).title }}",
+        "emailType": "html",
+        "message": "={{ JSON.parse($json.proposal_content).body_html }}",
+        "options": {
+          "ccEmail": "ignacio@katia.ai"
+        }
+      },
+      "id": "wf03-node-08",
+      "name": "Enviar Propuesta",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [1780, 200],
+      "credentials": {
+        "gmailOAuth2": { "id": "GMAIL_CREDENTIAL_ID", "name": "Gmail OAuth2" }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "documentId": { "__rl": true, "mode": "list", "value": "KATIA_CRM_SPREADSHEET_ID" },
+        "sheetName": { "__rl": true, "mode": "list", "value": "Leads" },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "status": "proposal_sent",
+            "updated_at": "={{ new Date().toISOString() }}"
+          },
+          "matchingColumns": ["lead_id"]
+        },
+        "options": {}
+      },
+      "id": "wf03-node-09-lead",
+      "name": "Actualizar Lead",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.2,
+      "position": [2000, 200],
+      "credentials": {
+        "googleSheetsOAuth2Api": { "id": "GOOGLE_SHEETS_CREDENTIAL_ID", "name": "Google Sheets OAuth2" }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "appendOrUpdate",
+        "documentId": { "__rl": true, "mode": "list", "value": "KATIA_CRM_SPREADSHEET_ID" },
+        "sheetName": { "__rl": true, "mode": "list", "value": "Activities" },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "activity_id": "={{ \"ACT-\" + Date.now() }}",
+            "lead_id": "={{ $json.lead_id }}",
+            "type": "proposal_sent",
+            "source": "workflow",
+            "details": "={{ $json.summary }}",
+            "timestamp": "={{ new Date().toISOString() }}",
+            "workflow": "KAT-COM-ProposalDrafting-v1"
+          }
+        },
+        "options": {}
+      },
+      "id": "wf03-node-09-log",
+      "name": "Log Propuesta Enviada",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.2,
+      "position": [2000, 340],
+      "credentials": {
+        "googleSheetsOAuth2Api": { "id": "GOOGLE_SHEETS_CREDENTIAL_ID", "name": "Google Sheets OAuth2" }
+      }
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $env.TELEGRAM_CEO_CHAT_ID }}",
+        "text": "✅ Propuesta enviada a {{ $json.name }} ({{ $json.company }})\n📧 Tracking activo\n⏭️ Follow-up automático en 3 días (WF-02)",
+        "additionalFields": { "parse_mode": "Markdown" }
+      },
+      "id": "wf03-node-10",
+      "name": "Confirmación Enviada",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.1,
+      "position": [2220, 200],
+      "credentials": {
+        "telegramApi": { "id": "TELEGRAM_CREDENTIAL_ID", "name": "Telegram Bot" }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ success: true, message: 'Propuesta en proceso de aprobación' }) }}",
+        "options": { "responseCode": 200 }
+      },
+      "id": "wf03-node-response",
+      "name": "Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1340, 500]
+    }
+  ],
+  "connections": {
+    "Solicitud de Propuesta": {
+      "main": [[ { "node": "Leer Datos del Lead", "type": "main", "index": 0 } ]]
+    },
+    "Leer Datos del Lead": {
+      "main": [[ { "node": "Pricing Table", "type": "main", "index": 0 } ]]
+    },
+    "Pricing Table": {
+      "main": [[ { "node": "Claude API: Generar Propuesta", "type": "main", "index": 0 } ]]
+    },
+    "Claude API: Generar Propuesta": {
+      "main": [[ { "node": "Propuesta Lista para Review", "type": "main", "index": 0 } ]]
+    },
+    "Propuesta Lista para Review": {
+      "main": [[ { "node": "Esperar Aprobación CEO", "type": "main", "index": 0 } ]]
+    },
+    "Esperar Aprobación CEO": {
+      "main": [[ { "node": "¿Aprobado?", "type": "main", "index": 0 } ]]
+    },
+    "¿Aprobado?": {
+      "main": [
+        [{ "node": "Enviar Propuesta", "type": "main", "index": 0 }],
+        [{ "node": "Log Rechazo", "type": "main", "index": 0 }]
+      ]
+    },
+    "Enviar Propuesta": {
+      "main": [
+        [
+          { "node": "Actualizar Lead", "type": "main", "index": 0 },
+          { "node": "Log Propuesta Enviada", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "Actualizar Lead": {
+      "main": [[ { "node": "Confirmación Enviada", "type": "main", "index": 0 } ]]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner"
+  },
+  "staticData": null,
+  "tags": [
+    { "name": "Comercial" },
+    { "name": "WF-03" },
+    { "name": "Proposal" }
+  ],
+  "triggerCount": 1,
+  "updatedAt": "2026-04-05T00:00:00.000Z",
+  "versionId": "1"
+}

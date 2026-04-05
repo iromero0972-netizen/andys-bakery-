@@ -1,0 +1,503 @@
+{
+  "name": "KAT-COM-LeadScoreFollowup-v1",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [{ "field": "cronExpression", "expression": "0 */6 * * *" }]
+        }
+      },
+      "id": "wf02-node-01",
+      "name": "Check Nuevos Leads",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "operation": "read",
+        "documentId": { "__rl": true, "mode": "list", "value": "KATIA_CRM_SPREADSHEET_ID" },
+        "sheetName": { "__rl": true, "mode": "list", "value": "Leads" },
+        "filtersUI": {
+          "values": [
+            { "lookupColumn": "score", "lookupValue": "0" },
+            { "lookupColumn": "status", "lookupValue": "new" }
+          ]
+        },
+        "options": {}
+      },
+      "id": "wf02-node-02",
+      "name": "Leer Leads Sin Score",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.2,
+      "position": [460, 300],
+      "credentials": {
+        "googleSheetsOAuth2Api": { "id": "GOOGLE_SHEETS_CREDENTIAL_ID", "name": "Google Sheets OAuth2" }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "conditions": [
+            {
+              "id": "cond-has-items",
+              "leftValue": "={{ $input.all().length }}",
+              "rightValue": 0,
+              "operator": { "type": "number", "operation": "gt" }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "wf02-node-03",
+      "name": "¿Hay leads por evaluar?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [680, 300]
+    },
+    {
+      "parameters": {},
+      "id": "wf02-node-03-noop",
+      "name": "No Operation",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [900, 460]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "authentication": "genericCredentialType",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "x-api-key", "value": "={{ $env.ANTHROPIC_API_KEY }}" },
+            { "name": "anthropic-version", "value": "2023-06-01" },
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ model: \"claude-sonnet-4-20250514\", max_tokens: 800, system: \"Eres un experto en lead scoring B2B para una agencia de automatización con IA que atiende PYMEs latinas en Texas. Tu cliente ideal (ICP): PYME en Houston/Katy, 5-50 empleados, industria servicios/retail/restaurantes, dueño hispanohablante, procesos manuales que se beneficiarían de automatización. Evalúa cada lead y responde SOLO con JSON válido, sin markdown.\", messages: [{ role: \"user\", content: \"Evalúa este lead:\\n\\nNombre: \" + $json.name + \"\\nEmpresa: \" + $json.company + \"\\nEmail: \" + $json.email + \"\\nTeléfono: \" + $json.phone + \"\\nMensaje: \" + $json.message + \"\\nFuente: \" + $json.source + \"\\n\\nResponde SOLO con este JSON:\\n{\\\"score\\\": <0-100>, \\\"classification\\\": \\\"SQL|MQL|DISCARD\\\", \\\"icp_fit\\\": <0-30>, \\\"pain_identified\\\": <0-25>, \\\"authority\\\": <0-20>, \\\"engagement\\\": <0-15>, \\\"timing\\\": <0-10>, \\\"reasoning\\\": \\\"<1 línea>\\\", \\\"suggested_approach\\\": \\\"<1 línea>\\\"}\" }] }) }}",
+        "options": {}
+      },
+      "id": "wf02-node-04",
+      "name": "Claude API: Lead Scoring",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [900, 300]
+    },
+    {
+      "parameters": {
+        "mode": "manual",
+        "duplicateItem": false,
+        "assignments": {
+          "assignments": [
+            { "id": "f-score", "name": "score", "value": "={{ JSON.parse($json.data.content[0].text).score }}", "type": "number" },
+            { "id": "f-class", "name": "classification", "value": "={{ JSON.parse($json.data.content[0].text).classification }}", "type": "string" },
+            { "id": "f-reason", "name": "reasoning", "value": "={{ JSON.parse($json.data.content[0].text).reasoning }}", "type": "string" },
+            { "id": "f-approach", "name": "suggested_approach", "value": "={{ JSON.parse($json.data.content[0].text).suggested_approach }}", "type": "string" }
+          ]
+        },
+        "options": { "includeBinary": false }
+      },
+      "id": "wf02-node-05",
+      "name": "Parsear Score",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.3,
+      "position": [1120, 300]
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "documentId": { "__rl": true, "mode": "list", "value": "KATIA_CRM_SPREADSHEET_ID" },
+        "sheetName": { "__rl": true, "mode": "list", "value": "Leads" },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "score": "={{ $json.score }}",
+            "status": "scored",
+            "next_action": "={{ $json.classification === 'SQL' ? 'contact_24h' : $json.classification === 'MQL' ? 'follow_up_day_1' : 'none' }}",
+            "updated_at": "={{ new Date().toISOString() }}"
+          },
+          "matchingColumns": ["lead_id"]
+        },
+        "options": {}
+      },
+      "id": "wf02-node-06",
+      "name": "Actualizar Lead con Score",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.2,
+      "position": [1340, 300],
+      "credentials": {
+        "googleSheetsOAuth2Api": { "id": "GOOGLE_SHEETS_CREDENTIAL_ID", "name": "Google Sheets OAuth2" }
+      }
+    },
+    {
+      "parameters": {
+        "dataType": "stringValue",
+        "value1": "={{ $json.classification }}",
+        "rules": {
+          "rules": [
+            { "value2": "SQL", "output": 0 },
+            { "value2": "MQL", "output": 1 },
+            { "value2": "DISCARD", "output": 2 }
+          ]
+        },
+        "fallbackOutput": 2
+      },
+      "id": "wf02-node-07",
+      "name": "Clasificar Lead",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3,
+      "position": [1560, 300]
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $env.TELEGRAM_CEO_CHAT_ID }}",
+        "text": "🔥 *HOT LEAD — SQL*\n━━━━━━━━━━━━━━━━━━━\n*Lead:* {{ $json.name }} — {{ $json.company }}\n*Score:* {{ $json.score }}/100\n*Razón:* {{ $json.reasoning }}\n*Approach:* {{ $json.suggested_approach }}\n━━━━━━━━━━━━━━━━━━━\n⚡ Contactar en <24 horas\n📞 Next: Discovery call",
+        "additionalFields": { "parse_mode": "Markdown" }
+      },
+      "id": "wf02-node-08a",
+      "name": "Hot Lead Alert",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.1,
+      "position": [1780, 160],
+      "credentials": {
+        "telegramApi": { "id": "TELEGRAM_CREDENTIAL_ID", "name": "Telegram Bot" }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "documentId": { "__rl": true, "mode": "list", "value": "KATIA_CRM_SPREADSHEET_ID" },
+        "sheetName": { "__rl": true, "mode": "list", "value": "Leads" },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "status": "nurturing",
+            "next_action": "follow_up_day_1",
+            "next_touch_date": "={{ new Date(Date.now() + 86400000).toISOString().split('T')[0] }}"
+          },
+          "matchingColumns": ["lead_id"]
+        },
+        "options": {}
+      },
+      "id": "wf02-node-08b",
+      "name": "Iniciar Secuencia Nurturing",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.2,
+      "position": [1780, 320],
+      "credentials": {
+        "googleSheetsOAuth2Api": { "id": "GOOGLE_SHEETS_CREDENTIAL_ID", "name": "Google Sheets OAuth2" }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "documentId": { "__rl": true, "mode": "list", "value": "KATIA_CRM_SPREADSHEET_ID" },
+        "sheetName": { "__rl": true, "mode": "list", "value": "Leads" },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "status": "disqualified",
+            "next_action": "none",
+            "updated_at": "={{ new Date().toISOString() }}"
+          },
+          "matchingColumns": ["lead_id"]
+        },
+        "options": {}
+      },
+      "id": "wf02-node-08c-sheets",
+      "name": "Archivar Descarte",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.2,
+      "position": [1780, 480],
+      "credentials": {
+        "googleSheetsOAuth2Api": { "id": "GOOGLE_SHEETS_CREDENTIAL_ID", "name": "Google Sheets OAuth2" }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "appendOrUpdate",
+        "documentId": { "__rl": true, "mode": "list", "value": "KATIA_CRM_SPREADSHEET_ID" },
+        "sheetName": { "__rl": true, "mode": "list", "value": "Activities" },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "activity_id": "={{ \"ACT-\" + Date.now() }}",
+            "lead_id": "={{ $json.lead_id }}",
+            "type": "disqualified",
+            "source": "={{ $json.source }}",
+            "details": "={{ $json.reasoning }}",
+            "timestamp": "={{ new Date().toISOString() }}",
+            "workflow": "KAT-COM-LeadScoreFollowup-v1"
+          }
+        },
+        "options": {}
+      },
+      "id": "wf02-node-08c-log",
+      "name": "Log Disqualified",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.2,
+      "position": [2000, 480],
+      "credentials": {
+        "googleSheetsOAuth2Api": { "id": "GOOGLE_SHEETS_CREDENTIAL_ID", "name": "Google Sheets OAuth2" }
+      }
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [{ "field": "cronExpression", "expression": "0 10 * * 1-5" }]
+        }
+      },
+      "id": "wf02-node-09",
+      "name": "Follow-up Diario",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [240, 700]
+    },
+    {
+      "parameters": {
+        "operation": "read",
+        "documentId": { "__rl": true, "mode": "list", "value": "KATIA_CRM_SPREADSHEET_ID" },
+        "sheetName": { "__rl": true, "mode": "list", "value": "Leads" },
+        "filtersUI": {
+          "values": [
+            { "lookupColumn": "next_touch_date", "lookupValue": "={{ new Date().toISOString().split('T')[0] }}" }
+          ]
+        },
+        "options": {}
+      },
+      "id": "wf02-node-10",
+      "name": "Leer Leads con Follow-up Hoy",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.2,
+      "position": [460, 700],
+      "credentials": {
+        "googleSheetsOAuth2Api": { "id": "GOOGLE_SHEETS_CREDENTIAL_ID", "name": "Google Sheets OAuth2" }
+      }
+    },
+    {
+      "parameters": {
+        "dataType": "stringValue",
+        "value1": "={{ $json.next_action }}",
+        "rules": {
+          "rules": [
+            { "value2": "follow_up_day_1", "output": 0 },
+            { "value2": "follow_up_day_3", "output": 0 },
+            { "value2": "follow_up_day_5", "output": 0 },
+            { "value2": "follow_up_day_7", "output": 0 },
+            { "value2": "follow_up_day_10", "output": 0 },
+            { "value2": "follow_up_day_12", "output": 1 },
+            { "value2": "follow_up_day_14", "output": 0 }
+          ]
+        },
+        "fallbackOutput": 0
+      },
+      "id": "wf02-node-11",
+      "name": "Día de Secuencia",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3,
+      "position": [680, 700]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "x-api-key", "value": "={{ $env.ANTHROPIC_API_KEY }}" },
+            { "name": "anthropic-version", "value": "2023-06-01" },
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ model: \"claude-sonnet-4-20250514\", max_tokens: 500, system: \"Eres el copywriter de KATIA.AI, agencia de automatización IA para PYMEs latinas en Texas. Escribes emails cortos (3-5 párrafos), personales, en español profesional pero cálido. Firma como Ignacio Romero, CPA — CEO KATIA.AI. NUNCA inventes datos del prospecto. NUNCA hagas promesas específicas de ROI.\", messages: [{ role: \"user\", content: \"Genera email de \" + $json.next_action + \" para:\\nNombre: \" + $json.name + \"\\nEmpresa: \" + $json.company + \"\\nMensaje original: \" + $json.message + \"\\nApproach sugerido: \" + $json.suggested_approach + \"\\n\\nResponde SOLO con JSON: {\\\"subject\\\": \\\"...\\\", \\\"body\\\": \\\"...\\\"}\" }] }) }}",
+        "options": {}
+      },
+      "id": "wf02-node-12",
+      "name": "Claude API: Generar Email",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [900, 700]
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $json.email }}",
+        "subject": "={{ JSON.parse($json.data.content[0].text).subject }}",
+        "emailType": "html",
+        "message": "={{ JSON.parse($json.data.content[0].text).body }}",
+        "options": {
+          "ccEmail": "ignacio@katia.ai"
+        }
+      },
+      "id": "wf02-node-13",
+      "name": "Enviar Email",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [1120, 700],
+      "credentials": {
+        "gmailOAuth2": { "id": "GMAIL_CREDENTIAL_ID", "name": "Gmail OAuth2" }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "appendOrUpdate",
+        "documentId": { "__rl": true, "mode": "list", "value": "KATIA_CRM_SPREADSHEET_ID" },
+        "sheetName": { "__rl": true, "mode": "list", "value": "Activities" },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "activity_id": "={{ \"ACT-\" + Date.now() }}",
+            "lead_id": "={{ $json.lead_id }}",
+            "type": "email_sent",
+            "source": "workflow",
+            "details": "={{ $json.subject }}",
+            "timestamp": "={{ new Date().toISOString() }}",
+            "workflow": "KAT-COM-LeadScoreFollowup-v1"
+          }
+        },
+        "options": {}
+      },
+      "id": "wf02-node-14-log",
+      "name": "Log Actividad",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.2,
+      "position": [1340, 700],
+      "credentials": {
+        "googleSheetsOAuth2Api": { "id": "GOOGLE_SHEETS_CREDENTIAL_ID", "name": "Google Sheets OAuth2" }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "documentId": { "__rl": true, "mode": "list", "value": "KATIA_CRM_SPREADSHEET_ID" },
+        "sheetName": { "__rl": true, "mode": "list", "value": "Leads" },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "next_action": "={{ { follow_up_day_1: 'follow_up_day_3', follow_up_day_3: 'follow_up_day_5', follow_up_day_5: 'follow_up_day_7', follow_up_day_7: 'follow_up_day_10', follow_up_day_10: 'follow_up_day_12', follow_up_day_12: 'follow_up_day_14', follow_up_day_14: 'sequence_complete' }[$json.next_action] }}",
+            "next_touch_date": "={{ { follow_up_day_1: 2, follow_up_day_3: 2, follow_up_day_5: 2, follow_up_day_7: 3, follow_up_day_10: 2, follow_up_day_12: 2, follow_up_day_14: 0 }[$json.next_action] ? new Date(Date.now() + { follow_up_day_1: 2, follow_up_day_3: 2, follow_up_day_5: 2, follow_up_day_7: 3, follow_up_day_10: 2, follow_up_day_12: 2, follow_up_day_14: 0 }[$json.next_action] * 86400000).toISOString().split('T')[0] : '' }}",
+            "updated_at": "={{ new Date().toISOString() }}"
+          },
+          "matchingColumns": ["lead_id"]
+        },
+        "options": {}
+      },
+      "id": "wf02-node-14-update",
+      "name": "Actualizar Next Touch",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.2,
+      "position": [1560, 700],
+      "credentials": {
+        "googleSheetsOAuth2Api": { "id": "GOOGLE_SHEETS_CREDENTIAL_ID", "name": "Google Sheets OAuth2" }
+      }
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $env.TELEGRAM_CEO_CHAT_ID }}",
+        "text": "👤 *LINKEDIN — ACCIÓN MANUAL*\n━━━━━━━━━━━━━━━━━━━\n*Lead:* {{ $json.name }} — {{ $json.company }}\n*Día 12:* Enviar connection request en LinkedIn\n*Approach:* {{ $json.suggested_approach }}",
+        "additionalFields": { "parse_mode": "Markdown" }
+      },
+      "id": "wf02-node-11-linkedin",
+      "name": "LinkedIn Manual Notify",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.1,
+      "position": [900, 880],
+      "credentials": {
+        "telegramApi": { "id": "TELEGRAM_CREDENTIAL_ID", "name": "Telegram Bot" }
+      }
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $env.TELEGRAM_CEO_CHAT_ID }}",
+        "text": "📧 *FOLLOW-UP DIARIO*\n━━━━━━━━━━━━━━━━━━━\nEmails enviados hoy: {{ $json.count }}\nLeads en nurturing: {{ $json.nurturing_count }}\nPróximos follow-ups: {{ $json.next_count }}",
+        "additionalFields": { "parse_mode": "Markdown" }
+      },
+      "id": "wf02-node-15",
+      "name": "Resumen Diario Follow-up",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.1,
+      "position": [1780, 700],
+      "credentials": {
+        "telegramApi": { "id": "TELEGRAM_CREDENTIAL_ID", "name": "Telegram Bot" }
+      }
+    }
+  ],
+  "connections": {
+    "Check Nuevos Leads": {
+      "main": [[ { "node": "Leer Leads Sin Score", "type": "main", "index": 0 } ]]
+    },
+    "Leer Leads Sin Score": {
+      "main": [[ { "node": "¿Hay leads por evaluar?", "type": "main", "index": 0 } ]]
+    },
+    "¿Hay leads por evaluar?": {
+      "main": [
+        [{ "node": "Claude API: Lead Scoring", "type": "main", "index": 0 }],
+        [{ "node": "No Operation", "type": "main", "index": 0 }]
+      ]
+    },
+    "Claude API: Lead Scoring": {
+      "main": [[ { "node": "Parsear Score", "type": "main", "index": 0 } ]]
+    },
+    "Parsear Score": {
+      "main": [[ { "node": "Actualizar Lead con Score", "type": "main", "index": 0 } ]]
+    },
+    "Actualizar Lead con Score": {
+      "main": [[ { "node": "Clasificar Lead", "type": "main", "index": 0 } ]]
+    },
+    "Clasificar Lead": {
+      "main": [
+        [{ "node": "Hot Lead Alert", "type": "main", "index": 0 }],
+        [{ "node": "Iniciar Secuencia Nurturing", "type": "main", "index": 0 }],
+        [{ "node": "Archivar Descarte", "type": "main", "index": 0 }]
+      ]
+    },
+    "Archivar Descarte": {
+      "main": [[ { "node": "Log Disqualified", "type": "main", "index": 0 } ]]
+    },
+    "Follow-up Diario": {
+      "main": [[ { "node": "Leer Leads con Follow-up Hoy", "type": "main", "index": 0 } ]]
+    },
+    "Leer Leads con Follow-up Hoy": {
+      "main": [[ { "node": "Día de Secuencia", "type": "main", "index": 0 } ]]
+    },
+    "Día de Secuencia": {
+      "main": [
+        [{ "node": "Claude API: Generar Email", "type": "main", "index": 0 }],
+        [{ "node": "LinkedIn Manual Notify", "type": "main", "index": 0 }]
+      ]
+    },
+    "Claude API: Generar Email": {
+      "main": [[ { "node": "Enviar Email", "type": "main", "index": 0 } ]]
+    },
+    "Enviar Email": {
+      "main": [[ { "node": "Log Actividad", "type": "main", "index": 0 } ]]
+    },
+    "Log Actividad": {
+      "main": [[ { "node": "Actualizar Next Touch", "type": "main", "index": 0 } ]]
+    },
+    "Actualizar Next Touch": {
+      "main": [[ { "node": "Resumen Diario Follow-up", "type": "main", "index": 0 } ]]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner"
+  },
+  "staticData": null,
+  "tags": [
+    { "name": "Comercial" },
+    { "name": "WF-02" },
+    { "name": "Lead Score" },
+    { "name": "Follow-up" }
+  ],
+  "triggerCount": 2,
+  "updatedAt": "2026-04-05T00:00:00.000Z",
+  "versionId": "1"
+}

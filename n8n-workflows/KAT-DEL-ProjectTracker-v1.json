@@ -1,0 +1,282 @@
+{
+  "name": "KAT-DEL-ProjectTracker-v1",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [{ "field": "cronExpression", "expression": "0 8 * * 1-5" }]
+        }
+      },
+      "id": "wf05-node-01",
+      "name": "Check Diario de Proyectos",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "operation": "read",
+        "documentId": { "__rl": true, "mode": "list", "value": "KATIA_DELIVERY_SPREADSHEET_ID" },
+        "sheetName": { "__rl": true, "mode": "list", "value": "Projects" },
+        "options": {}
+      },
+      "id": "wf05-node-02",
+      "name": "Leer Proyectos Activos",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.2,
+      "position": [460, 300],
+      "credentials": {
+        "googleSheetsOAuth2Api": { "id": "GOOGLE_SHEETS_CREDENTIAL_ID", "name": "Google Sheets OAuth2" }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\nconst results = [];\n\nfor (const item of items) {\n  const data = item.json;\n  if (data.status === 'closed' || data.status === 'cancelled') continue;\n  \n  const today = new Date();\n  const target = new Date(data.target_date);\n  const daysRemaining = Math.ceil((target - today) / 86400000);\n  const isOverdue = daysRemaining < 0;\n  const isAtRisk = daysRemaining <= 3 && daysRemaining >= 0;\n  \n  results.push({\n    json: {\n      ...data,\n      days_remaining: daysRemaining,\n      is_overdue: isOverdue,\n      is_at_risk: isAtRisk,\n      sla_status: isOverdue ? 'OVERDUE' : isAtRisk ? 'AT_RISK' : 'ON_TRACK'\n    }\n  });\n}\n\nreturn results;"
+      },
+      "id": "wf05-node-03",
+      "name": "Calcular SLA y Alertas",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [680, 300]
+    },
+    {
+      "parameters": {
+        "dataType": "stringValue",
+        "value1": "={{ $json.sla_status }}",
+        "rules": {
+          "rules": [
+            { "value2": "OVERDUE", "output": 0 },
+            { "value2": "AT_RISK", "output": 1 },
+            { "value2": "ON_TRACK", "output": 2 }
+          ]
+        },
+        "fallbackOutput": 2
+      },
+      "id": "wf05-node-04",
+      "name": "Clasificar por Status",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3,
+      "position": [900, 300]
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $env.TELEGRAM_CEO_CHAT_ID }}",
+        "text": "🚨 *PROYECTO OVERDUE*\n*Proyecto:* {{ $json.name }}\n*Cliente:* {{ $json.client_id }}\n*Fase:* {{ $json.phase }}\n*Vencido hace:* {{ Math.abs($json.days_remaining) }} días\n⚡ Acción requerida HOY",
+        "additionalFields": { "parse_mode": "Markdown" }
+      },
+      "id": "wf05-node-05a",
+      "name": "Alerta SLA Overdue",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.1,
+      "position": [1120, 160],
+      "credentials": {
+        "telegramApi": { "id": "TELEGRAM_CREDENTIAL_ID", "name": "Telegram Bot" }
+      }
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $env.TELEGRAM_CEO_CHAT_ID }}",
+        "text": "⚠️ *PROYECTO EN RIESGO*\n*Proyecto:* {{ $json.name }}\n*Días restantes:* {{ $json.days_remaining }}\n*Fase:* {{ $json.phase }}",
+        "additionalFields": { "parse_mode": "Markdown" }
+      },
+      "id": "wf05-node-05b",
+      "name": "Warning At Risk",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.1,
+      "position": [1120, 320],
+      "credentials": {
+        "telegramApi": { "id": "TELEGRAM_CREDENTIAL_ID", "name": "Telegram Bot" }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\nconst allProjects = items.map(i => i.json);\nconst onTrack = allProjects.filter(p => p.sla_status === 'ON_TRACK').length;\nconst atRisk = allProjects.filter(p => p.sla_status === 'AT_RISK').length;\nconst overdue = allProjects.filter(p => p.sla_status === 'OVERDUE').length;\nconst details = allProjects.map(p => `• ${p.name} [${p.phase}] — ${p.sla_status} (${p.days_remaining}d)`).join('\\n');\n\nreturn [{ json: { total_active: allProjects.length, on_track: onTrack, at_risk: atRisk, overdue: overdue, details: details } }];"
+      },
+      "id": "wf05-node-06-code",
+      "name": "Aggregate Dashboard",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1120, 480]
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $env.TELEGRAM_CEO_CHAT_ID }}",
+        "text": "📊 *DASHBOARD PROYECTOS*\n━━━━━━━━━━━━━━━━━━━\nActivos: {{ $json.total_active }}\n✅ On track: {{ $json.on_track }}\n⚠️ At risk: {{ $json.at_risk }}\n🚨 Overdue: {{ $json.overdue }}\n━━━━━━━━━━━━━━━━━━━\n{{ $json.details }}",
+        "additionalFields": { "parse_mode": "Markdown" }
+      },
+      "id": "wf05-node-06",
+      "name": "Resumen Diario Proyectos",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.1,
+      "position": [1340, 480],
+      "credentials": {
+        "telegramApi": { "id": "TELEGRAM_CREDENTIAL_ID", "name": "Telegram Bot" }
+      }
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "katia-project-update",
+        "authentication": "headerAuth",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "wf05-node-07",
+      "name": "Actualizar Fase de Proyecto",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1.1,
+      "position": [240, 700],
+      "webhookId": "katia-project-update"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "conditions": [
+            {
+              "id": "cond-gate",
+              "leftValue": "={{ ['design','qa','ready_go_live'].includes($json.new_phase) }}",
+              "rightValue": true,
+              "operator": { "type": "boolean", "operation": "true" }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "wf05-node-08",
+      "name": "¿Fase requiere Gate?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [460, 700]
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $env.TELEGRAM_CEO_CHAT_ID }}",
+        "text": "🔒 *GATE REQUERIDO*\n*Proyecto:* {{ $json.project_id }}\n*Fase actual → nueva:* {{ $json.phase }} → {{ $json.new_phase }}\n*Requiere:* Aprobación CEO\nResponde ✅ o ❌",
+        "additionalFields": { "parse_mode": "Markdown" }
+      },
+      "id": "wf05-node-09",
+      "name": "Solicitar Aprobación Gate",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.1,
+      "position": [680, 600],
+      "credentials": {
+        "telegramApi": { "id": "TELEGRAM_CREDENTIAL_ID", "name": "Telegram Bot" }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "documentId": { "__rl": true, "mode": "list", "value": "KATIA_DELIVERY_SPREADSHEET_ID" },
+        "sheetName": { "__rl": true, "mode": "list", "value": "Projects" },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "phase": "={{ $json.new_phase }}",
+            "status": "={{ $json.new_phase === 'closed' ? 'closed' : 'active' }}",
+            "notes": "={{ $json.notes || '' }}"
+          },
+          "matchingColumns": ["project_id"]
+        },
+        "options": {}
+      },
+      "id": "wf05-node-10",
+      "name": "Update Proyecto",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.2,
+      "position": [680, 800],
+      "credentials": {
+        "googleSheetsOAuth2Api": { "id": "GOOGLE_SHEETS_CREDENTIAL_ID", "name": "Google Sheets OAuth2" }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "appendOrUpdate",
+        "documentId": { "__rl": true, "mode": "list", "value": "KATIA_DELIVERY_SPREADSHEET_ID" },
+        "sheetName": { "__rl": true, "mode": "list", "value": "Project_Activities" },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "activity_id": "={{ \"ACT-\" + Date.now() }}",
+            "project_id": "={{ $json.project_id }}",
+            "type": "phase_update",
+            "details": "={{ 'Phase updated to ' + $json.new_phase + ($json.notes ? ' - ' + $json.notes : '') }}",
+            "timestamp": "={{ new Date().toISOString() }}",
+            "workflow": "KAT-DEL-ProjectTracker-v1"
+          }
+        },
+        "options": {}
+      },
+      "id": "wf05-node-10-log",
+      "name": "Log Phase Update",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.2,
+      "position": [900, 800],
+      "credentials": {
+        "googleSheetsOAuth2Api": { "id": "GOOGLE_SHEETS_CREDENTIAL_ID", "name": "Google Sheets OAuth2" }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ success: true, message: 'Proyecto actualizado' }) }}",
+        "options": { "responseCode": 200 }
+      },
+      "id": "wf05-node-response",
+      "name": "Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1120, 800]
+    }
+  ],
+  "connections": {
+    "Check Diario de Proyectos": {
+      "main": [[ { "node": "Leer Proyectos Activos", "type": "main", "index": 0 } ]]
+    },
+    "Leer Proyectos Activos": {
+      "main": [[ { "node": "Calcular SLA y Alertas", "type": "main", "index": 0 } ]]
+    },
+    "Calcular SLA y Alertas": {
+      "main": [[ { "node": "Clasificar por Status", "type": "main", "index": 0 } ]]
+    },
+    "Clasificar por Status": {
+      "main": [
+        [{ "node": "Alerta SLA Overdue", "type": "main", "index": 0 }],
+        [{ "node": "Warning At Risk", "type": "main", "index": 0 }],
+        [{ "node": "Aggregate Dashboard", "type": "main", "index": 0 }]
+      ]
+    },
+    "Aggregate Dashboard": {
+      "main": [[ { "node": "Resumen Diario Proyectos", "type": "main", "index": 0 } ]]
+    },
+    "Actualizar Fase de Proyecto": {
+      "main": [[ { "node": "¿Fase requiere Gate?", "type": "main", "index": 0 } ]]
+    },
+    "¿Fase requiere Gate?": {
+      "main": [
+        [{ "node": "Solicitar Aprobación Gate", "type": "main", "index": 0 }],
+        [{ "node": "Update Proyecto", "type": "main", "index": 0 }]
+      ]
+    },
+    "Update Proyecto": {
+      "main": [[ { "node": "Log Phase Update", "type": "main", "index": 0 } ]]
+    },
+    "Log Phase Update": {
+      "main": [[ { "node": "Response", "type": "main", "index": 0 } ]]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner"
+  },
+  "staticData": null,
+  "tags": [
+    { "name": "Delivery" },
+    { "name": "WF-05" },
+    { "name": "Project Tracker" }
+  ],
+  "triggerCount": 2,
+  "updatedAt": "2026-04-05T00:00:00.000Z",
+  "versionId": "1"
+}

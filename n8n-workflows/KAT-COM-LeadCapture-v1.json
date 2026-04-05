@@ -1,0 +1,589 @@
+{
+  "name": "KAT-COM-LeadCapture-v1",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "katia-lead-capture",
+        "authentication": "headerAuth",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "wf01-node-01",
+      "name": "Lead Inbound",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1.1,
+      "position": [240, 300],
+      "webhookId": "katia-lead-capture"
+    },
+    {
+      "parameters": {
+        "pollTimes": {
+          "item": [{ "mode": "everyMinute", "value": 5 }]
+        },
+        "filters": {
+          "readStatus": "unread"
+        },
+        "options": {
+          "labels": ["INBOX"],
+          "markAsRead": true
+        },
+        "simple": false
+      },
+      "id": "wf01-node-02",
+      "name": "Email Inbound",
+      "type": "n8n-nodes-base.gmailTrigger",
+      "typeVersion": 1,
+      "position": [240, 520],
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "GMAIL_CREDENTIAL_ID",
+          "name": "Gmail OAuth2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "manual",
+        "duplicateItem": false,
+        "assignments": {
+          "assignments": [
+            {
+              "id": "field-lead_id",
+              "name": "lead_id",
+              "value": "={{ \"KAT-L-\" + Date.now() }}",
+              "type": "string"
+            },
+            {
+              "id": "field-name",
+              "name": "name",
+              "value": "={{ ($json.name || $json.from?.split('<')[0]?.trim() || \"\").trim() }}",
+              "type": "string"
+            },
+            {
+              "id": "field-email",
+              "name": "email",
+              "value": "={{ ($json.email || $json.from?.match(/<(.+?)>/)?.[1] || \"\").toLowerCase().trim() }}",
+              "type": "string"
+            },
+            {
+              "id": "field-phone",
+              "name": "phone",
+              "value": "={{ ($json.phone || \"\").replace(/[^0-9+]/g, \"\") }}",
+              "type": "string"
+            },
+            {
+              "id": "field-company",
+              "name": "company",
+              "value": "={{ ($json.company || \"Sin empresa\").trim() }}",
+              "type": "string"
+            },
+            {
+              "id": "field-message",
+              "name": "message",
+              "value": "={{ ($json.message || $json.subject || \"\").substring(0, 1000) }}",
+              "type": "string"
+            },
+            {
+              "id": "field-source",
+              "name": "source",
+              "value": "={{ ($json.source || \"email\").toLowerCase() }}",
+              "type": "string"
+            },
+            {
+              "id": "field-referred_by",
+              "name": "referred_by",
+              "value": "={{ $json.referred_by || \"\" }}",
+              "type": "string"
+            },
+            {
+              "id": "field-status",
+              "name": "status",
+              "value": "new",
+              "type": "string"
+            },
+            {
+              "id": "field-score",
+              "name": "score",
+              "value": "0",
+              "type": "number"
+            },
+            {
+              "id": "field-next_action",
+              "name": "next_action",
+              "value": "qualify",
+              "type": "string"
+            },
+            {
+              "id": "field-owner",
+              "name": "owner",
+              "value": "ignacio",
+              "type": "string"
+            },
+            {
+              "id": "field-created_at",
+              "name": "created_at",
+              "value": "={{ new Date().toISOString() }}",
+              "type": "string"
+            },
+            {
+              "id": "field-updated_at",
+              "name": "updated_at",
+              "value": "={{ new Date().toISOString() }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "wf01-node-03",
+      "name": "Normalizer",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.3,
+      "position": [500, 400]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "cond-name-not-empty",
+              "leftValue": "={{ $json.name }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "isNotEmpty"
+              }
+            },
+            {
+              "id": "cond-name-length",
+              "leftValue": "={{ $json.name.length }}",
+              "rightValue": 2,
+              "operator": {
+                "type": "number",
+                "operation": "gte"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {},
+        "looseTypeValidation": true
+      },
+      "id": "wf01-node-04",
+      "name": "Datos Válidos?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [720, 400]
+    },
+    {
+      "parameters": {
+        "operation": "appendOrUpdate",
+        "documentId": {
+          "__rl": true,
+          "mode": "list",
+          "value": "KATIA_CRM_SPREADSHEET_ID"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "list",
+          "value": "Discarded_Leads"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "lead_id": "={{ $json.lead_id }}",
+            "name": "={{ $json.name }}",
+            "email": "={{ $json.email }}",
+            "phone": "={{ $json.phone }}",
+            "source": "={{ $json.source }}",
+            "reason": "datos_insuficientes",
+            "timestamp": "={{ $json.created_at }}"
+          }
+        },
+        "options": {}
+      },
+      "id": "wf01-node-04b",
+      "name": "Log Descarte",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.2,
+      "position": [940, 560],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "GOOGLE_SHEETS_CREDENTIAL_ID",
+          "name": "Google Sheets OAuth2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "read",
+        "documentId": {
+          "__rl": true,
+          "mode": "list",
+          "value": "KATIA_CRM_SPREADSHEET_ID"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "list",
+          "value": "Leads"
+        },
+        "filtersUI": {
+          "values": [
+            {
+              "lookupColumn": "email",
+              "lookupValue": "={{ $json.email }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "wf01-node-05",
+      "name": "Dedup Check",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.2,
+      "position": [940, 300],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "GOOGLE_SHEETS_CREDENTIAL_ID",
+          "name": "Google Sheets OAuth2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "cond-is-duplicate",
+              "leftValue": "={{ $input.all().length }}",
+              "rightValue": 0,
+              "operator": {
+                "type": "number",
+                "operation": "gt"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "wf01-node-06",
+      "name": "¿Duplicado?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1160, 300]
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "mode": "list",
+          "value": "KATIA_CRM_SPREADSHEET_ID"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "list",
+          "value": "Leads"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "message": "={{ $json.message + \" | \" + $('Normalizer').item.json.message }}",
+            "updated_at": "={{ new Date().toISOString() }}",
+            "source": "={{ $('Normalizer').item.json.source }}"
+          },
+          "matchingColumns": ["email"]
+        },
+        "options": {}
+      },
+      "id": "wf01-node-06b",
+      "name": "Update Lead Existente",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.2,
+      "position": [1380, 200],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "GOOGLE_SHEETS_CREDENTIAL_ID",
+          "name": "Google Sheets OAuth2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "appendOrUpdate",
+        "documentId": {
+          "__rl": true,
+          "mode": "list",
+          "value": "KATIA_CRM_SPREADSHEET_ID"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "list",
+          "value": "Leads"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "lead_id": "={{ $json.lead_id }}",
+            "name": "={{ $json.name }}",
+            "email": "={{ $json.email }}",
+            "phone": "={{ $json.phone }}",
+            "company": "={{ $json.company }}",
+            "message": "={{ $json.message }}",
+            "source": "={{ $json.source }}",
+            "referred_by": "={{ $json.referred_by }}",
+            "status": "={{ $json.status }}",
+            "score": "={{ $json.score }}",
+            "next_action": "={{ $json.next_action }}",
+            "owner": "={{ $json.owner }}",
+            "created_at": "={{ $json.created_at }}",
+            "updated_at": "={{ $json.updated_at }}"
+          }
+        },
+        "options": {}
+      },
+      "id": "wf01-node-07",
+      "name": "Crear Lead Nuevo",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.2,
+      "position": [1380, 400],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "GOOGLE_SHEETS_CREDENTIAL_ID",
+          "name": "Google Sheets OAuth2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $env.TELEGRAM_CEO_CHAT_ID }}",
+        "text": "🎯 *NUEVO LEAD KATIA.AI*\n━━━━━━━━━━━━━━━━━━━\n*Nombre:* {{ $json.name }}\n*Empresa:* {{ $json.company }}\n*Email:* {{ $json.email }}\n*Tel:* {{ $json.phone }}\n*Fuente:* {{ $json.source }}\n━━━━━━━━━━━━━━━━━━━\n*Mensaje:* {{ $json.message }}\n━━━━━━━━━━━━━━━━━━━\n✅ Registrado en CRM\n⏭️ Next: Calificar (WF-02)",
+        "additionalFields": {
+          "parse_mode": "Markdown"
+        }
+      },
+      "id": "wf01-node-08",
+      "name": "Notificar CEO",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.1,
+      "position": [1600, 300],
+      "credentials": {
+        "telegramApi": {
+          "id": "TELEGRAM_CREDENTIAL_ID",
+          "name": "Telegram Bot"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "appendOrUpdate",
+        "documentId": {
+          "__rl": true,
+          "mode": "list",
+          "value": "KATIA_CRM_SPREADSHEET_ID"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "list",
+          "value": "Activities"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "activity_id": "={{ \"ACT-\" + Date.now() }}",
+            "lead_id": "={{ $json.lead_id }}",
+            "type": "lead_captured",
+            "source": "={{ $json.source }}",
+            "details": "Lead capturado",
+            "timestamp": "={{ $json.created_at }}",
+            "workflow": "KAT-COM-LeadCapture-v1"
+          }
+        },
+        "options": {}
+      },
+      "id": "wf01-node-09",
+      "name": "Activity Log",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.2,
+      "position": [1820, 300],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "GOOGLE_SHEETS_CREDENTIAL_ID",
+          "name": "Google Sheets OAuth2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ success: true, lead_id: $json.lead_id, message: \"Lead registrado\" }) }}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "id": "wf01-node-10",
+      "name": "Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [2040, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ success: false, message: \"Datos insuficientes\" }) }}",
+        "options": {
+          "responseCode": 400
+        }
+      },
+      "id": "wf01-node-10-error",
+      "name": "Response Error",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1160, 560]
+    },
+    {
+      "parameters": {
+        "mode": "manual",
+        "duplicateItem": false,
+        "assignments": {
+          "assignments": [
+            {
+              "id": "err-node",
+              "name": "node_name",
+              "value": "={{ $json.node_name || 'unknown' }}",
+              "type": "string"
+            },
+            {
+              "id": "err-msg",
+              "name": "error_message",
+              "value": "={{ $json.error?.message || $json.message || 'Error desconocido' }}",
+              "type": "string"
+            },
+            {
+              "id": "err-ts",
+              "name": "timestamp",
+              "value": "={{ new Date().toISOString() }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "wf01-error-set",
+      "name": "Error Set",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.3,
+      "position": [1600, 600]
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $env.TELEGRAM_CEO_CHAT_ID }}",
+        "text": "⚠️ *ERROR WF-01*\nNodo: {{ $json.node_name }}\nError: {{ $json.error_message }}\nTimestamp: {{ $json.timestamp }}",
+        "additionalFields": {
+          "parse_mode": "Markdown"
+        }
+      },
+      "id": "wf01-error-telegram",
+      "name": "Error Telegram",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.1,
+      "position": [1820, 600],
+      "credentials": {
+        "telegramApi": {
+          "id": "TELEGRAM_CREDENTIAL_ID",
+          "name": "Telegram Bot"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Lead Inbound": {
+      "main": [
+        [{ "node": "Normalizer", "type": "main", "index": 0 }]
+      ]
+    },
+    "Email Inbound": {
+      "main": [
+        [{ "node": "Normalizer", "type": "main", "index": 0 }]
+      ]
+    },
+    "Normalizer": {
+      "main": [
+        [{ "node": "Datos Válidos?", "type": "main", "index": 0 }]
+      ]
+    },
+    "Datos Válidos?": {
+      "main": [
+        [{ "node": "Dedup Check", "type": "main", "index": 0 }],
+        [{ "node": "Log Descarte", "type": "main", "index": 0 }]
+      ]
+    },
+    "Log Descarte": {
+      "main": [
+        [{ "node": "Response Error", "type": "main", "index": 0 }]
+      ]
+    },
+    "Dedup Check": {
+      "main": [
+        [{ "node": "¿Duplicado?", "type": "main", "index": 0 }]
+      ]
+    },
+    "¿Duplicado?": {
+      "main": [
+        [{ "node": "Update Lead Existente", "type": "main", "index": 0 }],
+        [{ "node": "Crear Lead Nuevo", "type": "main", "index": 0 }]
+      ]
+    },
+    "Update Lead Existente": {
+      "main": [
+        [{ "node": "Notificar CEO", "type": "main", "index": 0 }]
+      ]
+    },
+    "Crear Lead Nuevo": {
+      "main": [
+        [{ "node": "Notificar CEO", "type": "main", "index": 0 }]
+      ]
+    },
+    "Notificar CEO": {
+      "main": [
+        [{ "node": "Activity Log", "type": "main", "index": 0 }]
+      ]
+    },
+    "Activity Log": {
+      "main": [
+        [{ "node": "Response", "type": "main", "index": 0 }]
+      ]
+    },
+    "Error Set": {
+      "main": [
+        [{ "node": "Error Telegram", "type": "main", "index": 0 }]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner"
+  },
+  "staticData": null,
+  "tags": [
+    { "name": "Comercial" },
+    { "name": "WF-01" },
+    { "name": "Lead Capture" }
+  ],
+  "triggerCount": 2,
+  "updatedAt": "2026-04-05T00:00:00.000Z",
+  "versionId": "1"
+}

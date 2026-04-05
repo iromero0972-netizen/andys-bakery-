@@ -1,0 +1,280 @@
+{
+  "name": "KAT-DEL-ClientOnboarding-v1",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "katia-client-onboarding",
+        "authentication": "headerAuth",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "wf04-node-01",
+      "name": "Contrato Firmado",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1.1,
+      "position": [240, 300],
+      "webhookId": "katia-client-onboarding"
+    },
+    {
+      "parameters": {
+        "operation": "read",
+        "documentId": { "__rl": true, "mode": "list", "value": "KATIA_CRM_SPREADSHEET_ID" },
+        "sheetName": { "__rl": true, "mode": "list", "value": "Leads" },
+        "filtersUI": {
+          "values": [{ "lookupColumn": "lead_id", "lookupValue": "={{ $json.lead_id }}" }]
+        },
+        "options": {}
+      },
+      "id": "wf04-node-02",
+      "name": "Leer Lead desde CRM",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.2,
+      "position": [460, 300],
+      "credentials": {
+        "googleSheetsOAuth2Api": { "id": "GOOGLE_SHEETS_CREDENTIAL_ID", "name": "Google Sheets OAuth2" }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "manual",
+        "duplicateItem": false,
+        "assignments": {
+          "assignments": [
+            { "id": "f-client_id", "name": "client_id", "value": "={{ \"KAT-C-\" + Date.now() }}", "type": "string" },
+            { "id": "f-name", "name": "name", "value": "={{ $json.name }}", "type": "string" },
+            { "id": "f-company", "name": "company", "value": "={{ $json.company }}", "type": "string" },
+            { "id": "f-email", "name": "email", "value": "={{ $json.email }}", "type": "string" },
+            { "id": "f-phone", "name": "phone", "value": "={{ $json.phone }}", "type": "string" },
+            { "id": "f-contract_date", "name": "contract_date", "value": "={{ $('Contrato Firmado').item.json.contract_date }}", "type": "string" },
+            { "id": "f-tier", "name": "tier", "value": "={{ $('Contrato Firmado').item.json.tier }}", "type": "string" },
+            { "id": "f-setup_amount", "name": "setup_amount", "value": "={{ $('Contrato Firmado').item.json.setup_amount }}", "type": "string" },
+            { "id": "f-retainer_amount", "name": "retainer_amount", "value": "={{ $('Contrato Firmado').item.json.retainer_amount }}", "type": "string" },
+            { "id": "f-status", "name": "status", "value": "onboarding", "type": "string" },
+            {
+              "id": "f-checklist",
+              "name": "onboarding_checklist",
+              "value": "={{ JSON.stringify([{item:'Contrato firmado',done:true},{item:'Pago 50% recibido',done:false},{item:'Accesos entregados',done:false},{item:'Discovery técnico completado',done:false},{item:'Design pack aprobado',done:false},{item:'Kick-off realizado',done:false}]) }}",
+              "type": "string"
+            },
+            { "id": "f-notes", "name": "notes", "value": "={{ $('Contrato Firmado').item.json.scope_summary }}", "type": "string" },
+            { "id": "f-created_at", "name": "created_at", "value": "={{ new Date().toISOString() }}", "type": "string" }
+          ]
+        },
+        "options": {}
+      },
+      "id": "wf04-node-03",
+      "name": "Crear Expediente Cliente",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.3,
+      "position": [680, 300]
+    },
+    {
+      "parameters": {
+        "operation": "appendOrUpdate",
+        "documentId": { "__rl": true, "mode": "list", "value": "KATIA_DELIVERY_SPREADSHEET_ID" },
+        "sheetName": { "__rl": true, "mode": "list", "value": "Clients" },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "client_id": "={{ $json.client_id }}",
+            "name": "={{ $json.name }}",
+            "company": "={{ $json.company }}",
+            "email": "={{ $json.email }}",
+            "phone": "={{ $json.phone }}",
+            "contract_date": "={{ $json.contract_date }}",
+            "tier": "={{ $json.tier }}",
+            "setup_amount": "={{ $json.setup_amount }}",
+            "retainer_amount": "={{ $json.retainer_amount }}",
+            "status": "={{ $json.status }}",
+            "onboarding_checklist": "={{ $json.onboarding_checklist }}",
+            "notes": "={{ $json.notes }}",
+            "created_at": "={{ $json.created_at }}"
+          }
+        },
+        "options": {}
+      },
+      "id": "wf04-node-04",
+      "name": "Crear Cliente",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.2,
+      "position": [900, 300],
+      "credentials": {
+        "googleSheetsOAuth2Api": { "id": "GOOGLE_SHEETS_CREDENTIAL_ID", "name": "Google Sheets OAuth2" }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "appendOrUpdate",
+        "documentId": { "__rl": true, "mode": "list", "value": "KATIA_DELIVERY_SPREADSHEET_ID" },
+        "sheetName": { "__rl": true, "mode": "list", "value": "Projects" },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "project_id": "={{ \"KAT-P-\" + Date.now() }}",
+            "client_id": "={{ $json.client_id }}",
+            "name": "={{ $json.company + ' - Automatización' }}",
+            "description": "={{ $json.notes }}",
+            "status": "intake",
+            "phase": "onboarding",
+            "start_date": "={{ new Date().toISOString().split('T')[0] }}",
+            "target_date": "",
+            "actual_date": "",
+            "risk_level": "={{ { starter: 'R3', growth: 'R2', enterprise: 'R1' }[$json.tier] || 'R2' }}",
+            "design_pack_url": "",
+            "qa_checklist": "",
+            "owner": "ignacio",
+            "notes": ""
+          }
+        },
+        "options": {}
+      },
+      "id": "wf04-node-05",
+      "name": "Crear Proyecto",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.2,
+      "position": [1120, 300],
+      "credentials": {
+        "googleSheetsOAuth2Api": { "id": "GOOGLE_SHEETS_CREDENTIAL_ID", "name": "Google Sheets OAuth2" }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "documentId": { "__rl": true, "mode": "list", "value": "KATIA_CRM_SPREADSHEET_ID" },
+        "sheetName": { "__rl": true, "mode": "list", "value": "Leads" },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "status": "converted",
+            "updated_at": "={{ new Date().toISOString() }}"
+          },
+          "matchingColumns": ["lead_id"]
+        },
+        "options": {}
+      },
+      "id": "wf04-node-06",
+      "name": "Actualizar Lead en CRM",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.2,
+      "position": [1340, 300],
+      "credentials": {
+        "googleSheetsOAuth2Api": { "id": "GOOGLE_SHEETS_CREDENTIAL_ID", "name": "Google Sheets OAuth2" }
+      }
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $json.email }}",
+        "subject": "¡Bienvenido a KATIA.AI! — Próximos pasos",
+        "emailType": "html",
+        "message": "=<h2>¡Bienvenido a KATIA.AI, {{ $json.name }}!</h2><p>Estamos encantados de tenerte como cliente. Aquí tienes un resumen de los próximos pasos:</p><h3>Alcance contratado</h3><p>{{ $json.notes }}</p><h3>Lo que necesitamos de ti</h3><ul><li>Accesos a los sistemas que vamos a integrar</li><li>Designar un punto de contacto de tu equipo</li><li>Confirmar disponibilidad para el kick-off</li></ul><h3>Próximos pasos</h3><ol><li>Kick-off call: <strong>{{ $('Contrato Firmado').item.json.kick_off_date }}</strong></li><li>Discovery técnico (1-2 sesiones)</li><li>Entrega del Design Pack para tu aprobación</li></ol><p>¿Preguntas? Escríbeme directamente a este correo.</p><p>Un abrazo,<br><strong>Ignacio Romero, CPA</strong><br>CEO — KATIA.AI<br>📞 Contacto directo disponible</p>",
+        "options": {}
+      },
+      "id": "wf04-node-07",
+      "name": "Email Bienvenida al Cliente",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [1560, 300],
+      "credentials": {
+        "gmailOAuth2": { "id": "GMAIL_CREDENTIAL_ID", "name": "Gmail OAuth2" }
+      }
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $env.TELEGRAM_CEO_CHAT_ID }}",
+        "text": "🎉 *NUEVO CLIENTE ONBOARDED*\n━━━━━━━━━━━━━━━━━━━\n*Cliente:* {{ $json.name }} — {{ $json.company }}\n*Tier:* {{ $json.tier }}\n*Setup:* {{ $json.setup_amount }}\n*Retainer:* {{ $json.retainer_amount }}/mes\n━━━━━━━━━━━━━━━━━━━\n📋 Checklist de onboarding creado\n📧 Email de bienvenida enviado\n📅 Kick-off: {{ $('Contrato Firmado').item.json.kick_off_date }}\n⏭️ Next: Discovery técnico",
+        "additionalFields": { "parse_mode": "Markdown" }
+      },
+      "id": "wf04-node-08",
+      "name": "Notificar CEO + Delivery",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.1,
+      "position": [1780, 300],
+      "credentials": {
+        "telegramApi": { "id": "TELEGRAM_CREDENTIAL_ID", "name": "Telegram Bot" }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "appendOrUpdate",
+        "documentId": { "__rl": true, "mode": "list", "value": "KATIA_DELIVERY_SPREADSHEET_ID" },
+        "sheetName": { "__rl": true, "mode": "list", "value": "Project_Activities" },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "activity_id": "={{ \"ACT-\" + Date.now() }}",
+            "project_id": "={{ $json.project_id }}",
+            "type": "client_onboarded",
+            "details": "={{ 'Cliente ' + $json.name + ' onboarded - Tier: ' + $json.tier }}",
+            "timestamp": "={{ new Date().toISOString() }}",
+            "workflow": "KAT-DEL-ClientOnboarding-v1"
+          }
+        },
+        "options": {}
+      },
+      "id": "wf04-node-09",
+      "name": "Log Activity",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.2,
+      "position": [2000, 300],
+      "credentials": {
+        "googleSheetsOAuth2Api": { "id": "GOOGLE_SHEETS_CREDENTIAL_ID", "name": "Google Sheets OAuth2" }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ success: true, client_id: $json.client_id, message: 'Cliente onboarded exitosamente' }) }}",
+        "options": { "responseCode": 200 }
+      },
+      "id": "wf04-node-response",
+      "name": "Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [2220, 300]
+    }
+  ],
+  "connections": {
+    "Contrato Firmado": {
+      "main": [[ { "node": "Leer Lead desde CRM", "type": "main", "index": 0 } ]]
+    },
+    "Leer Lead desde CRM": {
+      "main": [[ { "node": "Crear Expediente Cliente", "type": "main", "index": 0 } ]]
+    },
+    "Crear Expediente Cliente": {
+      "main": [[ { "node": "Crear Cliente", "type": "main", "index": 0 } ]]
+    },
+    "Crear Cliente": {
+      "main": [[ { "node": "Crear Proyecto", "type": "main", "index": 0 } ]]
+    },
+    "Crear Proyecto": {
+      "main": [[ { "node": "Actualizar Lead en CRM", "type": "main", "index": 0 } ]]
+    },
+    "Actualizar Lead en CRM": {
+      "main": [[ { "node": "Email Bienvenida al Cliente", "type": "main", "index": 0 } ]]
+    },
+    "Email Bienvenida al Cliente": {
+      "main": [[ { "node": "Notificar CEO + Delivery", "type": "main", "index": 0 } ]]
+    },
+    "Notificar CEO + Delivery": {
+      "main": [[ { "node": "Log Activity", "type": "main", "index": 0 } ]]
+    },
+    "Log Activity": {
+      "main": [[ { "node": "Response", "type": "main", "index": 0 } ]]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner"
+  },
+  "staticData": null,
+  "tags": [
+    { "name": "Delivery" },
+    { "name": "WF-04" },
+    { "name": "Onboarding" }
+  ],
+  "triggerCount": 1,
+  "updatedAt": "2026-04-05T00:00:00.000Z",
+  "versionId": "1"
+}
